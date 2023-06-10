@@ -178,15 +178,14 @@ void loop(){
             if (sensorData.pressure_Hpa > 993) client.println("Sunny");
             else if (sensorData.pressure_Hpa < 990) client.println("Wet");
             else client.println("Fair");
-
+            client.println("</span></td></tr>");                  
+            
             if (sensorData.stormWarning == true)
             {
                client.println("<tr><td>Weather warn</td><td><span class=\"sensor\">");
                client.println("Weather Warning STORM");
                client.println("</span></td></tr>");                     
             }
-                       
-            client.println(" *F</span></td></tr>");                  
             
             client.println("</body></html>");
             
