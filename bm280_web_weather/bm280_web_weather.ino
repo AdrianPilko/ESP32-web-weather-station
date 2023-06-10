@@ -62,6 +62,27 @@ struct bme_measurements_struct
 } sensorData;
 
 int measureCount = 0;
+int sleepCountDown = 1000;
+
+#define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
+#define TIME_TO_SLEEP  5        /* Time ESP32 will go to sleep (in seconds) */
+
+void print_wakeup_reason()
+{
+  esp_sleep_wakeup_cause_t wakeup_reason;
+  wakeup_reason = esp_sleep_get_wakeup_cause();
+
+  switch(wakeup_reason)
+  {
+    case ESP_SLEEP_WAKEUP_EXT0 : Serial.println("Wakeup caused by external signal using RTC_IO"); break;
+    case ESP_SLEEP_WAKEUP_EXT1 : Serial.println("Wakeup caused by external signal using RTC_CNTL"); break;
+    case ESP_SLEEP_WAKEUP_TIMER : Serial.println("Wakeup caused by timer"); break;
+    case ESP_SLEEP_WAKEUP_TOUCHPAD : Serial.println("Wakeup caused by touchpad"); break;
+    case ESP_SLEEP_WAKEUP_ULP : Serial.println("Wakeup caused by ULP program"); break;
+    default : Serial.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); break;
+  }
+}
+
 
 void setup() {
   Serial.begin(115200);
@@ -96,9 +117,7 @@ void setup() {
   Serial.println("WiFi connected.");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
-  server.begin();
-
-  
+  server.begin();  
 }
 
 void loop(){
@@ -110,11 +129,13 @@ void loop(){
     previousTime = currentTime;
     Serial.println("New Client.");          // print a message out in the serial port
     String currentLine = "";                // make a String to hold incoming data from the client
+
     while (client.connected() && currentTime - previousTime <= timeoutTime) 
-    {  // loop while the client's connected
+    {  
       currentTime = millis();
 
-      if (client.available()) {             // if there's bytes to read from the client,
+      if (client.available()) 
+      {             // if there's bytes to read from the client,
         char c = client.read();             // read a byte, then
         Serial.write(c);                    // print it out the serial monitor
         header += c;
@@ -214,33 +235,52 @@ void loop(){
           }
         } else if (c != '\r') {  // if you got anything else but a carriage return character,
           currentLine += c;      // add it to the end of the currentLine
-        }      
-      }// if new client    
-    } //while connected
-    // Clear the header variable
-    header = "";
-    // Close the connection
-    client.stop();    
-    Serial.println("Client disconnected.");
+        } 
+      }// if (client.available())    
+    } // while (client)      
+    sleepCountDown = 1000; // reset sleep countdown
+  } // if client.available()         
+  
+  
+  // Clear the header variable
+  header = "";
+  // Close the connection
+  client.stop();    
+  while (WiFi.status() != WL_CONNECTED) //wifi broken attempt reconnect
+  { 
+    server.stop(); // probably assume this has already stopped??
+         
+    // Connect to Wi-Fi network with SSID and password
+    
+    Serial.println(ssid);
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+      Serial.println("attempt reconnect to wifi");
+      delay(500);      
+    }
+    // Print local IP address and start web server
     Serial.println("");
-    while (WiFi.status() != WL_CONNECTED) //wifi broken attempt reconnect
-    { 
-      server.stop(); // probably assume this has already stopped??
-           
-      // Connect to Wi-Fi network with SSID and password
-      Serial.print("attempting to reconnect to ");
-      Serial.println(ssid);
-      WiFi.begin(ssid, password);
-      while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-      }
-      // Print local IP address and start web server
-      Serial.println("");
-      Serial.println("WiFi connected.");
-      Serial.println("IP address: ");
-      Serial.println(WiFi.localIP());
-      server.begin();
-    }    
+    Serial.println("WiFi connected.");
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
+    server.begin();
+  }   
+
+  
+  delay(500);
+  
+  if (sleepCountDown-- <= 0)
+  {
+    print_wakeup_reason(); //Print the wakeup reason for ESP32 
+    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+    Serial.println("No clients so going to light-sleep now to reduce power consumption");
+    Serial.flush(); 
+    esp_light_sleep_start();  
+    sleepCountDown = 1000; // after 100 loops then sleep
+  }
+  else
+  {    
+   Serial.println("sleepCountDown=");
+   Serial.println(sleepCountDown);
   }
 }
